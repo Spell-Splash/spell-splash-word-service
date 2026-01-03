@@ -16,3 +16,23 @@ class QuizQuestionSchema(BaseModel):
 
     class Config:
         orm_mode = True
+
+class WordSubmission(BaseModel):
+    """
+    รับข้อมูลคำตอบจากผู้เล่น
+    """
+    word: str
+    available_letters: List[str]
+
+class WordCheckResponse(BaseModel):
+    """
+    ส่งผลการตรวจและคะแนนกลับไป
+    """
+    is_valid: bool
+    message: str
+    word: Optional[str] = None
+    base_score: int = 0
+    is_in_db: bool = False
+    cefr_level: Optional[str] = None
+    multiplier: float = 1.0
+    total_score: int = 0

@@ -117,3 +117,29 @@ def get_definition_quiz(db: Session, level: str = "ALL"):
             for c in choices
         ]
     }
+
+def check_definition_answer(db: Session, vocab_id: int, answer_id: int):
+    """
+    ตรวจคำตอบ: เทียบ vocab_id (โจทย์) กับ answer_id (ที่ผู้เล่นตอบ)
+    """
+    # 1. ดึงข้อมูลโจทย์ (เฉลย)
+    target = db.query(Vocabulary).filter(Vocabulary.vocab_id == vocab_id).first()
+    
+    if not target:
+        raise HTTPException(status_code=404, detail="Question word not found")
+
+    # 2. เช็คความถูกต้อง
+    is_correct = (vocab_id == answer_id)
+    
+    # 3. เตรียมข้อความตอบกลับ
+    if is_correct:
+        msg = "Correct! เก่งมาก"
+    else:
+        msg = "Wrong! ลองใหม่อีกครั้งนะ"
+        
+    return {
+        "is_correct": is_correct,
+        "message": msg,
+        "correct_word": target.word,
+        "meaning": target.meaning
+    }

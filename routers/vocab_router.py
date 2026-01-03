@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
-from schemas import QuizQuestionSchema
+from schemas import QuizQuestionSchema, WordSubmission, WordCheckResponse
 from services import vocab_service
 
 router = APIRouter(
@@ -16,3 +16,24 @@ def get_quiz(level: str, db: Session = Depends(get_db)):
     ตัวอย่าง Level: A1, A2, B1, B2, C1
     """
     return vocab_service.get_random_quiz_by_level(db, level.upper())
+
+@router.get("/game/letters")
+def get_letters(amount: int = 10):
+    """
+    ขอรับกองตัวอักษร (Letter Pool) ไปเริ่มเกม
+    """
+    letters = vocab_service.generate_letter_pool(amount)
+    return {"letters": letters}
+
+@router.post("/game/submit", response_model=WordCheckResponse)
+def submit_word(payload: WordSubmission, db: Session = Depends(get_db)):
+    """
+    ส่งคำตอบเพื่อคิดคะแนน
+    """
+    # ดึงค่าจาก payload มาใช้
+    result = vocab_service.check_word_submission(
+        db, 
+        payload.word, 
+        payload.available_letters
+    )
+    return result

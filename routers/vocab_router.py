@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
-from schemas import DefinitionQuizResponse, WordSubmission, WordCheckResponse
+from schemas import (
+    DefinitionAnswerSubmission, 
+    DefinitionAnswerResponse, 
+    DefinitionQuizResponse, 
+    WordSubmission, 
+    WordCheckResponse
+    )
 from services import vocab_service
 
 router = APIRouter(
@@ -38,3 +44,14 @@ def get_definition_quiz_endpoint(level: str = "ALL", db: Session = Depends(get_d
     - level="ALL" -> สุ่มจากทุก Level (A1-C1)
     """
     return vocab_service.get_definition_quiz(db, level)
+
+@router.post("/quiz/definition/check", response_model=DefinitionAnswerResponse)
+def check_definition_answer_endpoint(payload: DefinitionAnswerSubmission, db: Session = Depends(get_db)):
+    """
+    ตรวจคำตอบ Word Matching
+    """
+    return vocab_service.check_definition_answer(
+        db, 
+        payload.vocab_id, 
+        payload.answer_id
+    )

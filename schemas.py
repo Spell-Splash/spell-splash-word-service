@@ -12,6 +12,16 @@ class DefinitionQuizResponse(BaseModel):
     cefr_level: str
     choices: List[ChoiceSchema]
 
+class DefinitionAnswerSubmission(BaseModel):
+    vocab_id: int
+    answer_id: int
+
+class DefinitionAnswerResponse(BaseModel):
+    is_correct: bool
+    message: str
+    correct_word: str
+    meaning: str
+
 class WordSubmission(BaseModel):
     """
     รับข้อมูลคำตอบจากผู้เล่น

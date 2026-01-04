@@ -3,11 +3,11 @@ from typing import List, Optional
 
 class ChoiceSchema(BaseModel):
     vocab_id: int
-    word: str
+    meaning: str
 
 class DefinitionQuizResponse(BaseModel):
     mode: str
-    vocab_id: int         
+    vocab_id: int
     question: str
     cefr_level: str
     choices: List[ChoiceSchema]

@@ -79,41 +79,37 @@ def check_word_submission(db: Session, submitted_word: str, available_letters: l
 
 def get_definition_quiz(db: Session, level: str = "ALL"):
     """
-    สร้างโจทย์จับคู่ (รองรับการสุ่มทุก Level)
+    สร้างโจทย์จับคู่: โจทย์อังกฤษ -> ชอยส์ไทย (3 ตัวเลือก)
     """
-    # 1. สร้าง Query พื้นฐาน
+    # 1. Query หาคำศัพท์ (Logic เดิม)
     query = db.query(Vocabulary)
     
-    # 2. ถ้าไม่ได้ขอ "ALL" ให้กรองตาม Level ที่ระบุ
     if level and level.upper() != "ALL":
         query = query.filter(Vocabulary.cefr_level == level.upper())
         
-    # 3. สุ่มโจทย์ (Target)
     target = query.order_by(func.rand()).first()
     
     if not target:
-        # กรณีระบุ Level ผิด หรือไม่มีข้อมูล
         raise HTTPException(status_code=404, detail="No words found")
 
-    # 4. สุ่มตัวหลอก (Distractors) 2 ตัว
-    # (Logic: สุ่มจากทั้ง DB เลย ไม่จำกัด Level เพื่อความหลากหลาย)
+    # 2. สุ่มตัวหลอก (Logic เดิม)
     distractors = db.query(Vocabulary)\
         .filter(Vocabulary.vocab_id != target.vocab_id)\
         .order_by(func.rand())\
         .limit(2)\
         .all()
     
-    # 5. รวมและสลับตำแหน่ง
+    # 3. รวมและ Shuffle
     choices = [target] + distractors
     random.shuffle(choices)
     
     return {
         "mode": "definition",
         "vocab_id": target.vocab_id,
-        "question": target.meaning,
+        "question": target.word,
         "cefr_level": target.cefr_level,
         "choices": [
-            {"vocab_id": c.vocab_id, "word": c.word} 
+            {"vocab_id": c.vocab_id, "meaning": c.meaning} 
             for c in choices
         ]
     }

@@ -41,3 +41,15 @@ class WordCheckResponse(BaseModel):
     cefr_level: Optional[str] = None
     multiplier: float = 1.0
     total_score: int = 0
+
+class CursedChoiceSchema(BaseModel):
+    vocab_id: int
+    word: str
+
+class CursedQuizResponse(BaseModel):
+    mode: str
+    vocab_id: int
+    question: str = "[Audio Clip]"
+    audio_url: str
+    cefr_level: str
+    choices: List[CursedChoiceSchema]

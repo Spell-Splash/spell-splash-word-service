@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from schemas import (
@@ -6,7 +6,8 @@ from schemas import (
     DefinitionAnswerResponse, 
     DefinitionQuizResponse, 
     WordSubmission, 
-    WordCheckResponse
+    WordCheckResponse,
+    CursedQuizResponse
     )
 from services import vocab_service
 
@@ -55,3 +56,15 @@ def check_definition_answer_endpoint(payload: DefinitionAnswerSubmission, db: Se
         payload.vocab_id, 
         payload.answer_id
     )
+
+@router.get("/quiz/cursed", response_model=CursedQuizResponse)
+def get_cursed_quiz(level: str = "ALL", db: Session = Depends(get_db)):
+    """
+    ดึงโจทย์โหมดคำสาป (Cursed Mode):
+    - Return: Audio URL สำหรับโจทย์ และตัวเลือกที่เสียง/รูปคล้ายกัน
+    """
+    try:
+        return vocab_service.get_cursed_quiz(db, level)
+    except Exception as e:
+        # ดักจับ Error กรณีหาคำศัพท์ไม่ได้ หรือ Logic มีปัญหา
+        raise HTTPException(status_code=500, detail=str(e))

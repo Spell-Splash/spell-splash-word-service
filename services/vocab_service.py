@@ -2,9 +2,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import func
 from models import Vocabulary
 from fastapi import HTTPException
-from constants import SCRABBLE_SCORES, CEFR_MULTIPLIERS, LETTER_WEIGHTS
+from constants import SCRABBLE_SCORES, CEFR_MULTIPLIERS, LETTER_WEIGHTS, TTS_SERVICE_URL
 from spellchecker import SpellChecker
 import random
+import difflib
 
 spell = SpellChecker()
 
@@ -138,4 +139,89 @@ def check_definition_answer(db: Session, vocab_id: int, answer_id: int):
         "message": msg,
         "correct_word": target.word,
         "meaning": target.meaning
+    }
+
+def get_cursed_quiz(db: Session, level: str = "ALL"):
+    """
+    สร้างโจทย์โหมดคำสาป (Listening Challenge):
+    - โจทย์: เสียง (TTS)
+    - ตัวเลือก: ศัพท์ที่เสียงเหมือน (Homophones) หรือเขียนคล้าย
+    """
+    # 1. สุ่มโจทย์ (Target)
+    query = db.query(Vocabulary)
+    if level and level.upper() != "ALL":
+        query = query.filter(Vocabulary.cefr_level == level.upper())
+    
+    target = query.order_by(func.rand()).first()
+    
+    if not target:
+        raise HTTPException(status_code=404, detail="No words found")
+
+    distractors = []
+    
+    # --- Step 2: หาตัวหลอกแบบ "เสียงเหมือน/พ้องเสียง" (Homophones) ---
+    # ถ้ามีข้อมูล Phonetic ให้ลองหาคนที่ IPA ตรงกันเลย (เช่น Meat vs Meet)
+    if target.phonetic_transcription:
+        homophones = db.query(Vocabulary)\
+            .filter(Vocabulary.phonetic_transcription == target.phonetic_transcription)\
+            .filter(Vocabulary.vocab_id != target.vocab_id)\
+            .limit(2)\
+            .all()
+        distractors.extend(homophones)
+    
+    # --- Step 3: หาตัวหลอกแบบ "เขียนคล้าย" (Spelling Similarity) ---
+    # (ใช้ Logic เดิมมาเติมให้เต็ม 3 ข้อ)
+    if len(distractors) < 3:
+        needed = 3 - len(distractors)
+        
+        # หาคำที่ขึ้นต้นเหมือนกัน
+        candidates = db.query(Vocabulary)\
+            .filter(Vocabulary.word.like(f"{target.word[0]}%"))\
+            .filter(Vocabulary.vocab_id != target.vocab_id)\
+            .filter(Vocabulary.vocab_id.notin_([d.vocab_id for d in distractors]))\
+            .limit(50)\
+            .all() # ดึงมาสัก 50 ตัวแล้วมาคัดกรองเอง
+            
+        # คำนวณความเหมือนด้วย difflib
+        scored_candidates = []
+        for cand in candidates:
+            ratio = difflib.SequenceMatcher(None, target.word.lower(), cand.word.lower()).ratio()
+            scored_candidates.append((ratio, cand))
+        
+        # เรียงลำดับเอาที่เหมือนที่สุด
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+        
+        # หยิบตัวท็อปๆ มาเติม
+        spelling_distractors = [item[1] for item in scored_candidates[:needed]]
+        distractors.extend(spelling_distractors)
+        
+    # --- Step 4: ถ้ายังไม่ครบ 3 (กรณีหาคำคล้ายไม่ได้เลย) ---
+    if len(distractors) < 3:
+        needed = 3 - len(distractors)
+        random_filler = db.query(Vocabulary)\
+            .filter(Vocabulary.vocab_id != target.vocab_id)\
+            .filter(Vocabulary.vocab_id.notin_([d.vocab_id for d in distractors]))\
+            .order_by(func.rand())\
+            .limit(needed)\
+            .all()
+        distractors.extend(random_filler)
+
+    # 5. รวมและสลับตำแหน่ง
+    choices = [target] + distractors
+    random.shuffle(choices)
+    
+    # 6. สร้าง URL สำหรับ TTS (ส่ง Query Param เป็นคำศัพท์ไป)
+    # ตัวอย่าง URL: http://localhost:8001/tts?text=abandon
+    audio_link = f"{TTS_SERVICE_URL}?text={target.word}"
+    
+    return {
+        "mode": "cursed_listening",
+        "vocab_id": target.vocab_id,
+        "question": "Listen carefully!", # ข้อความบอกผู้เล่น
+        "audio_url": audio_link,
+        "cefr_level": target.cefr_level,
+        "choices": [
+            {"vocab_id": c.vocab_id, "word": c.word} 
+            for c in choices
+        ]
     }

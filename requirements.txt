@@ -8,11 +8,16 @@ exceptiongroup==1.3.1
 fastapi==0.128.0
 h11==0.16.0
 idna==3.11
+inexactsearch==1.0.2
 mysql-connector-python==9.4.0
 pydantic==2.12.5
 pydantic_core==2.41.5
+pyspellchecker==0.8.4
 python-dotenv==1.2.1
+python-multipart==0.0.20
 requests==2.32.5
+silpa-common==0.3
+soundex==1.1.3
 SQLAlchemy==2.0.45
 starlette==0.49.3
 typing-inspection==0.4.2

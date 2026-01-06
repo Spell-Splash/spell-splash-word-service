@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from database import get_db
 from schemas import (
@@ -68,3 +68,13 @@ def get_cursed_quiz(level: str = "ALL", db: Session = Depends(get_db)):
     except Exception as e:
         # ดักจับ Error กรณีหาคำศัพท์ไม่ได้ หรือ Logic มีปัญหา
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/quiz/speaking/check")
+def check_speaking_quiz(
+    target_word: str = Form(...),
+    file: UploadFile = File(...)
+):
+    """
+    รับไฟล์เสียงจากผู้เล่น -> ส่งไปตรวจ -> คืนผลคะแนน
+    """
+    return vocab_service.check_pronunciation(target_word, file)

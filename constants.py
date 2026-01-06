@@ -25,3 +25,5 @@ LETTER_WEIGHTS = {
 }
 
 TTS_SERVICE_URL = "http://localhost:8001/tts"
+
+STT_SERVICE_URL = "http://localhost:8002/stt/transcribe"

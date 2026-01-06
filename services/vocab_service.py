@@ -1,8 +1,11 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import func
 from models import Vocabulary
-from fastapi import HTTPException
-from constants import SCRABBLE_SCORES, CEFR_MULTIPLIERS, LETTER_WEIGHTS, TTS_SERVICE_URL
+from fastapi import HTTPException, UploadFile
+import requests
+from constants import (
+    SCRABBLE_SCORES, CEFR_MULTIPLIERS, 
+    LETTER_WEIGHTS, TTS_SERVICE_URL, STT_SERVICE_URL)
 from spellchecker import SpellChecker
 import random
 import difflib
@@ -225,3 +228,63 @@ def get_cursed_quiz(db: Session, level: str = "ALL"):
             for c in choices
         ]
     }
+
+def check_pronunciation(target_word: str, audio_file: UploadFile):
+    """
+    ส่งไฟล์เสียงไปตรวจที่ STT Service และคำนวณคะแนน
+    """
+    # 1. เตรียมไฟล์เพื่อส่งต่อให้ STT Service
+    files = {
+        'file': (audio_file.filename, audio_file.file, audio_file.content_type)
+    }
+
+    try:
+        # 2. ยิง Request ไปหา STT Service (Port 8002)
+        response = requests.post(STT_SERVICE_URL, files=files)
+        
+        if response.status_code != 200:
+            return {"error": "STT Service failed", "detail": response.text}
+            
+        data = response.json()
+        spoken_text = data.get("text", "").lower().strip()
+        confidence = data.get("confidence_score", 0.0)
+        
+        # 3. Logic ตัดเกรด (Scoring System)
+        target = target_word.lower().strip()
+        
+        # ลบเครื่องหมายวรรคตอนออก (เผื่อ whisper ใส่จุด full stop มา)
+        spoken_text_clean = spoken_text.replace(".", "").replace("?", "").replace("!", "")
+        
+        is_correct = False
+        final_score = 0
+        feedback = ""
+
+        if spoken_text_clean == target:
+            # กรณี: พูดถูกคำเป๊ะๆ
+            is_correct = True
+            final_score = int(confidence * 100) # คะแนนเต็ม 100
+            
+            if final_score >= 80:
+                feedback = "Excellent! Perfect pronunciation."
+            elif final_score >= 50:
+                feedback = "Good job, but try to speak clearly."
+            else:
+                feedback = "Correct word, but unclear pronunciation."
+        else:
+            # กรณี: พูดผิดคำ (หรือ Whisper ฟังผิด)
+            is_correct = False
+            final_score = int(confidence * 30) # ให้คะแนนความพยายามนิดหน่อย
+            feedback = f"Incorrect. You said '{spoken_text_clean}', but expected '{target}'."
+
+        return {
+            "target_word": target,
+            "spoken_text": spoken_text_clean,
+            "is_correct": is_correct,
+            "score": final_score,         # คะแนน 0-100
+            "confidence_raw": confidence, # ค่าดิบจาก AI
+            "feedback": feedback
+        }
+
+    except Exception as e:
+        print(f"❌ Connection Error: {e}")
+        return {"error": "Cannot connect to STT Service", "detail": str(e)}

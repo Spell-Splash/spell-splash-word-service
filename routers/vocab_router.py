@@ -2,8 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from database import get_db
 from schemas import (
-    DefinitionAnswerSubmission, 
-    DefinitionAnswerResponse, 
     DefinitionQuizResponse, 
     WordSubmission, 
     WordCheckResponse,
@@ -16,6 +14,8 @@ router = APIRouter(
     tags=["Vocabulary"]
 )
 
+# --- 1. Spelling / Word Building Mode ---
+
 @router.get("/game/letters")
 def get_letters(amount: int = 10):
     """
@@ -27,9 +27,8 @@ def get_letters(amount: int = 10):
 @router.post("/game/submit", response_model=WordCheckResponse)
 def submit_word(payload: WordSubmission, db: Session = Depends(get_db)):
     """
-    ส่งคำตอบเพื่อคิดคะแนน
+    ส่งคำตอบเพื่อคิดคะแนน (Mode นี้ต้องเช็คที่ Server เสมอ)
     """
-    # ดึงค่าจาก payload มาใช้
     result = vocab_service.check_word_submission(
         db, 
         payload.word, 
@@ -37,37 +36,33 @@ def submit_word(payload: WordSubmission, db: Session = Depends(get_db)):
     )
     return result
 
-@router.get("/quiz/definition", response_model=DefinitionQuizResponse)
-def get_definition_quiz_endpoint(level: str = "ALL", db: Session = Depends(get_db)):
-    """
-    ดึงโจทย์ Word Matching
-    - level="A1" -> สุ่มเฉพาะ A1
-    - level="ALL" -> สุ่มจากทุก Level (A1-C1)
-    """
-    return vocab_service.get_definition_quiz(db, level)
+# --- 2. Definition Quiz Mode ---
 
-@router.post("/quiz/definition/check", response_model=DefinitionAnswerResponse)
-def check_definition_answer_endpoint(payload: DefinitionAnswerSubmission, db: Session = Depends(get_db)):
+@router.get("/quiz/definition", response_model=DefinitionQuizResponse)
+def get_definition_quiz(level: str = "ALL", db: Session = Depends(get_db)):
     """
-    ตรวจคำตอบ Word Matching
+    ดึงโจทย์ทายความหมาย
+    - Return: โจทย์ + เฉลย (Index)
+    - Frontend เช็คถูก/ผิดเองได้เลย
     """
-    return vocab_service.check_definition_answer(
-        db, 
-        payload.vocab_id, 
-        payload.answer_id
-    )
+    try:
+        return vocab_service.get_definition_quiz(db, level)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- 3. Cursed Quiz Mode ---
 
 @router.get("/quiz/cursed", response_model=CursedQuizResponse)
 def get_cursed_quiz(level: str = "ALL", db: Session = Depends(get_db)):
     """
-    ดึงโจทย์โหมดคำสาป (Cursed Mode):
-    - Return: Audio URL สำหรับโจทย์ และตัวเลือกที่เสียง/รูปคล้ายกัน
+    ดึงโจทย์โหมดคำสาป (Listening Challenge)
     """
     try:
         return vocab_service.get_cursed_quiz(db, level)
     except Exception as e:
-        # ดักจับ Error กรณีหาคำศัพท์ไม่ได้ หรือ Logic มีปัญหา
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- 4. Speaking Mode ---
 
 @router.post("/quiz/speaking/check")
 def check_speaking_quiz(
@@ -75,6 +70,6 @@ def check_speaking_quiz(
     file: UploadFile = File(...)
 ):
     """
-    รับไฟล์เสียงจากผู้เล่น -> ส่งไปตรวจ -> คืนผลคะแนน
+    รับไฟล์เสียงจากผู้เล่น -> ส่งไปตรวจ STT -> คืนผลคะแนน
     """
     return vocab_service.check_pronunciation(target_word, file)

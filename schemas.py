@@ -1,38 +1,40 @@
 from pydantic import BaseModel
 from typing import List, Optional
 
-class ChoiceSchema(BaseModel):
+# --- Shared Schemas (ใช้ร่วมกันได้) ---
+
+class BaseChoiceSchema(BaseModel):
+    """Schema สำหรับตัวเลือก A, B, C, D"""
     vocab_id: int
-    meaning: str
+    word: str  # ✅ แก้จาก meaning เป็น word ให้ตรงกับปุ่มกด
+
+# --- 1. Definition Quiz Mode ---
 
 class DefinitionQuizResponse(BaseModel):
-    mode: str
+    mode: str = "definition" # ใส่ default value ไว้เลย
     vocab_id: int
-    question: str
+    question: str            # โจทย์ (ความหมายภาษาไทย หรือ Definition Eng)
     cefr_level: str
-    choices: List[ChoiceSchema]
+    correct_index: int       # ✅ เฉลย (0-3) สำหรับ Client-side check
+    choices: List[BaseChoiceSchema] # ใช้ Schema กลาง
+    tts_link: Optional[str] = None  # (Optional) เผื่ออยากให้กดฟังเสียงคำตอบได้
 
+# ถ้า Frontend เช็คคำตอบเองได้แล้ว 2 อันล่างนี้ใช้ยิงเพื่อ "Save Progress" อย่างเดียว
 class DefinitionAnswerSubmission(BaseModel):
     vocab_id: int
-    answer_id: int
+    is_correct: bool # ✅ ส่งแค่ว่าถูกหรือผิดไปให้ Server บันทึกก็พอ
 
-class DefinitionAnswerResponse(BaseModel):
-    is_correct: bool
-    message: str
-    correct_word: str
-    meaning: str
+class SaveProgressResponse(BaseModel):
+    status: str
+    new_xp: int
+
+# --- 2. Spelling / Word Construction Mode ---
 
 class WordSubmission(BaseModel):
-    """
-    รับข้อมูลคำตอบจากผู้เล่น
-    """
     word: str
     available_letters: List[str]
 
 class WordCheckResponse(BaseModel):
-    """
-    ส่งผลการตรวจและคะแนนกลับไป
-    """
     is_valid: bool
     message: str
     word: Optional[str] = None
@@ -42,14 +44,12 @@ class WordCheckResponse(BaseModel):
     multiplier: float = 1.0
     total_score: int = 0
 
-class CursedChoiceSchema(BaseModel):
-    vocab_id: int
-    word: str
+# --- 3. Cursed Quiz Mode ---
 
 class CursedQuizResponse(BaseModel):
-    mode: str
+    mode: str = "cursed"
     vocab_id: int
     question: str = "[Audio Clip]"
-    audio_url: str
+    audio_url: str           # ลิงก์ไฟล์เสียงจาก TTS
     cefr_level: str
-    choices: List[CursedChoiceSchema]
+    choices: List[BaseChoiceSchema] # ใช้ Schema กลาง (Reused)

@@ -15,7 +15,23 @@ import difflib
 spell = SpellChecker()
 
 # ---------------------------------------------------------
-# 1. Logic เดิม (ไม่ได้แก้)
+# Helper Functions
+# ---------------------------------------------------------
+def get_audio_url(vocab_obj):
+    """
+    ฟังก์ชันเลือก URL เสียง:
+    1. ถ้ามีไฟล์เสียงจริงใน DB (audio_cache_path) ให้ใช้ path นั้น
+    2. ถ้าไม่มี ให้สร้าง URL สำหรับเรียก TTS Service
+    """
+    if vocab_obj.audio_cache_path:
+        # ส่ง path กลับไป (Frontend ต้องรู้ว่า Base URL คืออะไร หรือถ้าอยู่เครื่องเดียวกันก็ใช้ได้เลย)
+        return vocab_obj.audio_cache_path
+    
+    # Fallback ไปใช้ TTS
+    return f"{TTS_SERVICE_URL}/tts?text={vocab_obj.word}&voice=af_bella"
+
+# ---------------------------------------------------------
+# 1. Spelling / Word Building Mode Logic
 # ---------------------------------------------------------
 def generate_letter_pool(amount: int = 10):
     population = list(LETTER_WEIGHTS.keys())
@@ -29,6 +45,8 @@ def generate_letter_pool(amount: int = 10):
 
 def check_word_submission(db: Session, submitted_word: str, available_letters: list):
     word_upper = submitted_word.upper().strip()
+    
+    # 1. เช็คตัวอักษรในมือ
     temp_pool = available_letters.copy()
     for char in word_upper:
         if char in temp_pool:
@@ -39,12 +57,14 @@ def check_word_submission(db: Session, submitted_word: str, available_letters: l
                 "message": f"คุณไม่มีตัวอักษร '{char}' ในกอง หรือใช้เกินจำนวน!"
             }
 
+    # 2. เช็ค Dictionary
     if submitted_word.lower() not in spell.known([submitted_word.lower()]):
         return {
             "is_valid": False, 
             "message": f"'{submitted_word}' ไม่ใช่คำศัพท์ภาษาอังกฤษที่ถูกต้อง"
         }
 
+    # 3. คำนวณคะแนน
     base_score = sum(SCRABBLE_SCORES.get(char, 0) for char in word_upper)
     db_vocab = db.query(Vocabulary).filter(Vocabulary.word == submitted_word.lower()).first()
     
@@ -52,7 +72,7 @@ def check_word_submission(db: Session, submitted_word: str, available_letters: l
     cefr_level = None
     
     if db_vocab:
-        cefr_level = db_vocab.cefr_level.upper()
+        cefr_level = db_vocab.cefr_level.upper() if db_vocab.cefr_level else None
         multiplier = CEFR_MULTIPLIERS.get(cefr_level, 1.0)
     
     final_score = int(base_score * multiplier)
@@ -69,45 +89,53 @@ def check_word_submission(db: Session, submitted_word: str, available_letters: l
     }
 
 # ---------------------------------------------------------
-# 2. แก้ไข: Definition Quiz (ให้ตรง Schema ใหม่)
+# 2. Definition Quiz Logic (Fixed Recursion)
 # ---------------------------------------------------------
 def get_definition_quiz(db: Session, level: str = "ALL"):
-    # 1. เลือกคำตอบ (MySQL ใช้ func.rand(), SQLite/Postgres ใช้ func.random())
+    # 1. เลือกคำตอบ (Target)
     query = db.query(Vocabulary)
     if level != "ALL":
         query = query.filter(Vocabulary.cefr_level == level)
     
-    target_vocab = query.order_by(func.rand()).first() # แก้เป็น func.rand() ให้เหมือนกันหมด
+    target_vocab = query.order_by(func.rand()).first()
     
     if not target_vocab:
         raise HTTPException(status_code=404, detail="No vocabulary found")
 
-    # 2. เลือกตัวหลอก
+    # 2. เลือกตัวหลอก (Distractors)
     distractors = db.query(Vocabulary)\
         .filter(Vocabulary.vocab_id != target_vocab.vocab_id)\
         .order_by(func.rand())\
         .limit(3)\
         .all()
 
-    # 3. รวมและสลับ
-    choices_vocab = [target_vocab] + distractors
-    random.shuffle(choices_vocab)
+    # 3. แปลงเป็น Dict เพื่อตัดวงจร Recursion และเตรียม Shuffle
+    choices_data = [
+        {"vocab_id": target_vocab.vocab_id, "word": target_vocab.word}
+    ]
+    for d in distractors:
+        choices_data.append({"vocab_id": d.vocab_id, "word": d.word})
     
-    correct_index = choices_vocab.index(target_vocab)
+    # สลับตำแหน่ง
+    random.shuffle(choices_data)
     
-    # โจทย์: ใช้ meaning (ไทย) ถ้าไม่มีใช้ definition (อังกฤษ)
+    # 4. หา Index ของคำตอบที่ถูกต้อง
+    correct_index = -1
+    for idx, item in enumerate(choices_data):
+        if item["vocab_id"] == target_vocab.vocab_id:
+            correct_index = idx
+            break
+            
+    # เตรียมข้อมูลส่งกลับ
     question_text = target_vocab.meaning if target_vocab.meaning else target_vocab.definition
-    
-    # TTS URL (แก้ให้มี /tts)
-    audio_url = f"{TTS_SERVICE_URL}/tts?text={target_vocab.word}&voice=af_bella"
+    audio_url = get_audio_url(target_vocab)
 
-    # ✅ สร้าง List ของ ChoiceSchema ให้ตรงตามที่ Schema ต้องการ
+    # แปลง Dict กลับเป็น Schema
     formatted_choices = [
-        schemas.BaseChoiceSchema(vocab_id=v.vocab_id, word=v.word)
-        for v in choices_vocab
+        schemas.BaseChoiceSchema(vocab_id=c["vocab_id"], word=c["word"])
+        for c in choices_data
     ]
 
-    # ✅ Return เป็น Pydantic Model พร้อมฟิลด์ใหม่ (mode, cefr_level)
     return schemas.DefinitionQuizResponse(
         mode="definition",
         vocab_id=target_vocab.vocab_id,
@@ -119,7 +147,7 @@ def get_definition_quiz(db: Session, level: str = "ALL"):
     )
 
 # ---------------------------------------------------------
-# 3. แก้ไข: Cursed Quiz (ให้ตรง Schema ใหม่)
+# 3. Cursed Quiz Logic (Fixed Recursion)
 # ---------------------------------------------------------
 def get_cursed_quiz(db: Session, level: str = "ALL"):
     # 1. สุ่มโจทย์
@@ -173,19 +201,22 @@ def get_cursed_quiz(db: Session, level: str = "ALL"):
             .all()
         distractors.extend(random_filler)
 
-    # 5. รวมและสลับ
-    choices = [target] + distractors
-    random.shuffle(choices)
+    # 5. รวม Choice และแปลงเป็น Dict (เพื่อแก้ Recursion Error)
+    choices_data = [
+        {"vocab_id": target.vocab_id, "word": target.word}
+    ]
+    for d in distractors:
+        choices_data.append({"vocab_id": d.vocab_id, "word": d.word})
+        
+    random.shuffle(choices_data)
     
-    audio_link = f"{TTS_SERVICE_URL}/tts?text={target.word}&voice=af_bella"
+    audio_link = get_audio_url(target)
     
-    # ✅ แปลง Choice เป็น BaseChoiceSchema
     formatted_choices = [
-        schemas.BaseChoiceSchema(vocab_id=v.vocab_id, word=v.word)
-        for v in choices
+        schemas.BaseChoiceSchema(vocab_id=c["vocab_id"], word=c["word"])
+        for c in choices_data
     ]
     
-    # ✅ Return เป็น Pydantic Model (schemas.CursedQuizResponse)
     return schemas.CursedQuizResponse(
         mode="cursed",
         vocab_id=target.vocab_id,
@@ -196,7 +227,7 @@ def get_cursed_quiz(db: Session, level: str = "ALL"):
     )
 
 # ---------------------------------------------------------
-# 4. Logic เดิม (เช็คเสียง)
+# 4. Speaking Mode Logic
 # ---------------------------------------------------------
 def check_pronunciation(target_word: str, audio_file: UploadFile):
     files = {

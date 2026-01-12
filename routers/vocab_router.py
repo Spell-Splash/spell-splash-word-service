@@ -6,7 +6,7 @@ from schemas import (
     WordSubmission, 
     WordCheckResponse,
     CursedQuizResponse
-    )
+)
 from services import vocab_service
 
 router = APIRouter(
@@ -29,26 +29,23 @@ def submit_word(payload: WordSubmission, db: Session = Depends(get_db)):
     """
     ส่งคำตอบเพื่อคิดคะแนน (Mode นี้ต้องเช็คที่ Server เสมอ)
     """
-    result = vocab_service.check_word_submission(
+    return vocab_service.check_word_submission(
         db, 
         payload.word, 
         payload.available_letters
     )
-    return result
 
 # --- 2. Definition Quiz Mode ---
 
 @router.get("/quiz/definition", response_model=DefinitionQuizResponse)
 def get_definition_quiz(level: str = "ALL", db: Session = Depends(get_db)):
     """
-    ดึงโจทย์ทายความหมาย
-    - Return: โจทย์ + เฉลย (Index)
-    - Frontend เช็คถูก/ผิดเองได้เลย
+    ดึงโจทย์ทายความหมาย 
+    - Server จะพยายามส่ง path ไฟล์เสียงจริง (Static) กลับมา ถ้ามี
+    - ถ้าไม่มีจะใช้ TTS Link แทน
     """
-    try:
-        return vocab_service.get_definition_quiz(db, level)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # ปล่อยให้ FastAPI จัดการ Error (ไม่มี try-except ขวาง)
+    return vocab_service.get_definition_quiz(db, level)
 
 # --- 3. Cursed Quiz Mode ---
 
@@ -57,10 +54,7 @@ def get_cursed_quiz(level: str = "ALL", db: Session = Depends(get_db)):
     """
     ดึงโจทย์โหมดคำสาป (Listening Challenge)
     """
-    try:
-        return vocab_service.get_cursed_quiz(db, level)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return vocab_service.get_cursed_quiz(db, level)
 
 # --- 4. Speaking Mode ---
 

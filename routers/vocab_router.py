@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from schemas import (
@@ -45,15 +45,6 @@ def get_definition_quiz(level: str = "ALL", db: Session = Depends(get_db)):
 def get_cursed_quiz(level: str = "ALL", db: Session = Depends(get_db)):
     return vocab_service.get_cursed_quiz(db, level)
 
-# --- 4. Speaking Mode ---
-
-@router.post("/quiz/speaking/check")
-def check_speaking_quiz(
-    target_word: str = Form(...),
-    file: UploadFile = File(...)
-):
-    return vocab_service.check_pronunciation(target_word, file)
-
 # ==========================================
 # 👤 5. Player & Quest Management
 # ==========================================
@@ -61,28 +52,27 @@ def check_speaking_quiz(
 @router.post("/player/register", response_model=PlayerProfileResponse)
 def register_player(player_data: PlayerCreate, db: Session = Depends(get_db)):
     """
-    ลงทะเบียนผู้เล่นครั้งแรก (หรือ Login ถ้ามี ID แล้ว)
+    Register new player (or Login if ID exists)
     """
     return vocab_service.register_or_get_player(db, player_data)
 
 @router.get("/player/{player_id}", response_model=PlayerProfileResponse)
 def get_player_profile(player_id: str, db: Session = Depends(get_db)):
     """
-    ดึงข้อมูลโปรไฟล์ (เอาไว้โชว์ในหน้า Menu)
+    Get profile data (for display in Menu)
     """
     return vocab_service.get_player_profile(db, player_id)
 
 @router.post("/player/quest/update")
 def update_quest_status(quest_data: QuestUpdate, db: Session = Depends(get_db)):
     """
-    Unity ยิง API นี้เมื่อเควสมีการเปลี่ยนแปลง (เช่น รับเควส / ส่งเควส)
+    Unity calls this API when quest status changes (e.g., Accept/Complete quest)
     """
     return vocab_service.update_quest_status(db, quest_data)
 
 @router.get("/player/{player_id}/npc_context", response_model=GameStateForNPC)
 def get_npc_context(player_id: str, db: Session = Depends(get_db)):
     """
-    🎯 ไฮไลท์สำคัญ!
-    Unity เรียก API นี้ -> ได้ Text สรุป -> ส่งไปหา NPC Service
+    Unity calls this -> Gets summary text -> Sends to NPC Service for context
     """
     return vocab_service.get_game_state_for_npc(db, player_id)

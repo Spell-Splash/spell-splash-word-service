@@ -1,7 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 
-
 class BaseChoiceSchema(BaseModel):
     vocab_id: int
     word: str
@@ -25,7 +24,7 @@ class SaveProgressResponse(BaseModel):
     status: str
     message: str
 
-# 2. Spelling
+# 2. Spelling / Word Building Mode
 class WordSubmission(BaseModel):
     player_id: str
     word: str
@@ -36,6 +35,10 @@ class WordCheckResponse(BaseModel):
     message: str
     word: Optional[str] = None
     is_in_db: bool = False
+    base_score: int = 0
+    cefr_level: Optional[str] = None
+    multiplier: float = 1.0
+    total_score: int = 0
 
 # 3. Cursed Quiz
 class CursedQuizResponse(BaseModel):
@@ -46,24 +49,22 @@ class CursedQuizResponse(BaseModel):
     cefr_level: str
     choices: List[BaseChoiceSchema]
 
-# สร้าง/ลงทะเบียนผู้เล่น
+# Player Management
 class PlayerCreate(BaseModel):
     player_id: str
     username: str
 
-# ดึงข้อมูลผู้เล่น
 class PlayerProfileResponse(BaseModel):
     player_id: str
     username: str
     model_config = ConfigDict(from_attributes=True)
 
-# อัปเดตสถานะเควส
+# Quest & NPC State
 class QuestUpdate(BaseModel):
     player_id: str
     quest_id: str
     status: str  # "IN_PROGRESS", "COMPLETED"
 
-# Schema สำหรับสร้าง String ไปบอก NPC (ใช้กับ RAG)
 class GameStateForNPC(BaseModel):
     player_summary: str  
-    # ตัวอย่าง: "Player Alice. Quest 'Find Sword': COMPLETED."
+    # Example: "Player Alice. Quest 'Find Sword': COMPLETED."

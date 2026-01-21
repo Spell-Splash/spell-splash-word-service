@@ -1,11 +1,11 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import func
 from models import Vocabulary, Player, PlayerQuest
-from fastapi import HTTPException, UploadFile
-import requests
+from fastapi import HTTPException
 from constants import (
     SCRABBLE_SCORES, CEFR_MULTIPLIERS, 
-    LETTER_WEIGHTS, TTS_SERVICE_URL, STT_SERVICE_URL
+    LETTER_WEIGHTS, TTS_SERVICE_URL
+    # STT_SERVICE_URL removed
 )
 import schemas
 from spellchecker import SpellChecker
@@ -18,6 +18,8 @@ spell = SpellChecker()
 # Helper Functions
 # ---------------------------------------------------------
 def get_audio_url(vocab_obj):
+    # This is TTS (Text-to-Speech) for the system to speak to the user
+    # Kept because it is not STT (Speech-to-Text)
     if vocab_obj.audio_cache_path:
         return vocab_obj.audio_cache_path
     return f"{TTS_SERVICE_URL}/tts?text={vocab_obj.word}&voice=af_bella"
@@ -38,7 +40,7 @@ def generate_letter_pool(amount: int = 10):
 def check_word_submission(db: Session, submitted_word: str, available_letters: list):
     word_upper = submitted_word.upper().strip()
     
-    # 1. เช็คตัวอักษร
+    # 1. Check letters
     temp_pool = available_letters.copy()
     for char in word_upper:
         if char in temp_pool:
@@ -46,11 +48,11 @@ def check_word_submission(db: Session, submitted_word: str, available_letters: l
         else:
             return {"is_valid": False, "message": f"Missing letter '{char}'!"}
 
-    # 2. เช็ค Dictionary
+    # 2. Check Dictionary
     if submitted_word.lower() not in spell.known([submitted_word.lower()]):
         return {"is_valid": False, "message": "Not a valid English word."}
 
-    # 3. คำนวณคะแนน (Game Logic ปกติ)
+    # 3. Calculate Score
     base_score = sum(SCRABBLE_SCORES.get(char, 0) for char in word_upper)
     db_vocab = db.query(Vocabulary).filter(Vocabulary.word == submitted_word.lower()).first()
     
@@ -124,7 +126,7 @@ def get_cursed_quiz(db: Session, level: str = "ALL"):
         raise HTTPException(status_code=404, detail="No words found")
 
     distractors = []
-    # (Logic หาตัวหลอกเดิมคงไว้...)
+    
     if target.phonetic_transcription:
         homophones = db.query(Vocabulary).filter(Vocabulary.phonetic_transcription == target.phonetic_transcription, Vocabulary.vocab_id != target.vocab_id).limit(2).all()
         distractors.extend(homophones)
@@ -153,36 +155,6 @@ def get_cursed_quiz(db: Session, level: str = "ALL"):
     )
 
 # ---------------------------------------------------------
-# 4. Speaking Mode Logic
-# ---------------------------------------------------------
-def check_pronunciation(target_word: str, audio_file: UploadFile):
-    files = {'file': (audio_file.filename, audio_file.file, audio_file.content_type)}
-    try:
-        response = requests.post(STT_SERVICE_URL, files=files)
-        if response.status_code != 200:
-            return {"error": "STT Service failed"}
-            
-        data = response.json()
-        spoken_text = data.get("text", "").lower().strip()
-        confidence = data.get("confidence_score", 0.0)
-        target = target_word.lower().strip()
-        
-        # Simple string matching
-        spoken_clean = spoken_text.replace(".", "").replace("?", "")
-        is_correct = spoken_clean == target
-        score = int(confidence * 100) if is_correct else int(confidence * 30)
-        
-        return {
-            "target_word": target,
-            "spoken_text": spoken_clean,
-            "is_correct": is_correct,
-            "score": score,
-            "feedback": "Excellent!" if score > 80 else "Try again."
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-# ---------------------------------------------------------
 # 5. 👤 Player Management
 # ---------------------------------------------------------
 def register_or_get_player(db: Session, player_data: schemas.PlayerCreate):
@@ -208,9 +180,8 @@ def get_player_profile(db: Session, player_id: str):
 # ---------------------------------------------------------
 def update_quest_status(db: Session, quest_data: schemas.QuestUpdate):
     """
-    Unity จะยิงมาที่นี่เมื่อผู้เล่นทำอะไรสำเร็จ
+    Unity sends request here when player completes an action
     """
-    # 1. เช็คว่ามีเควสนี้อยู่แล้วไหม
     quest = db.query(PlayerQuest).filter(
         PlayerQuest.player_id == quest_data.player_id,
         PlayerQuest.quest_id == quest_data.quest_id
@@ -219,7 +190,6 @@ def update_quest_status(db: Session, quest_data: schemas.QuestUpdate):
     if quest:
         quest.status = quest_data.status
     else:
-        # ถ้าไม่มี ให้สร้างใหม่
         quest = PlayerQuest(
             player_id=quest_data.player_id,
             quest_id=quest_data.quest_id,
@@ -232,13 +202,12 @@ def update_quest_status(db: Session, quest_data: schemas.QuestUpdate):
 
 def get_game_state_for_npc(db: Session, player_id: str) -> schemas.GameStateForNPC:
     """
-    ฟังก์ชันสำคัญ! รวบรวมข้อมูลผู้เล่นเป็น String เดียว เพื่อส่งให้ AI อ่าน
+    Summarize player data into a string for AI NPC
     """
     player = db.query(Player).filter(Player.player_id == player_id).first()
     if not player:
         return schemas.GameStateForNPC(player_summary="Unknown Player")
 
-    # ดึงเฉพาะเควสที่กำลังทำ หรือ เสร็จแล้ว
     active_quests = [q.quest_id for q in player.quests if q.status == "IN_PROGRESS"]
     completed_quests = [q.quest_id for q in player.quests if q.status == "COMPLETED"]
 

@@ -1,36 +1,33 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 
-# --- Shared Schemas (ใช้ร่วมกันได้) ---
 
 class BaseChoiceSchema(BaseModel):
-    """Schema สำหรับตัวเลือก A, B, C, D"""
     vocab_id: int
-    word: str  # ✅ แก้จาก meaning เป็น word ให้ตรงกับปุ่มกด
+    word: str
 
-# --- 1. Definition Quiz Mode ---
-
+# 1. Definition Quiz
 class DefinitionQuizResponse(BaseModel):
-    mode: str = "definition" # ใส่ default value ไว้เลย
+    mode: str = "definition"
     vocab_id: int
-    question: str            # โจทย์ (ความหมายภาษาไทย หรือ Definition Eng)
+    question: str
     cefr_level: str
-    correct_index: int       # ✅ เฉลย (0-3) สำหรับ Client-side check
-    choices: List[BaseChoiceSchema] # ใช้ Schema กลาง
-    tts_link: Optional[str] = None  # (Optional) เผื่ออยากให้กดฟังเสียงคำตอบได้
+    correct_index: int
+    choices: List[BaseChoiceSchema]
+    tts_link: Optional[str] = None
 
-# ถ้า Frontend เช็คคำตอบเองได้แล้ว 2 อันล่างนี้ใช้ยิงเพื่อ "Save Progress" อย่างเดียว
 class DefinitionAnswerSubmission(BaseModel):
+    player_id: str 
     vocab_id: int
-    is_correct: bool # ✅ ส่งแค่ว่าถูกหรือผิดไปให้ Server บันทึกก็พอ
+    is_correct: bool
 
 class SaveProgressResponse(BaseModel):
     status: str
-    new_xp: int
+    message: str
 
-# --- 2. Spelling / Word Construction Mode ---
-
+# 2. Spelling
 class WordSubmission(BaseModel):
+    player_id: str
     word: str
     available_letters: List[str]
 
@@ -38,18 +35,35 @@ class WordCheckResponse(BaseModel):
     is_valid: bool
     message: str
     word: Optional[str] = None
-    base_score: int = 0
     is_in_db: bool = False
-    cefr_level: Optional[str] = None
-    multiplier: float = 1.0
-    total_score: int = 0
 
-# --- 3. Cursed Quiz Mode ---
-
+# 3. Cursed Quiz
 class CursedQuizResponse(BaseModel):
     mode: str = "cursed"
     vocab_id: int
     question: str = "[Audio Clip]"
-    audio_url: str           # ลิงก์ไฟล์เสียงจาก TTS
+    audio_url: str
     cefr_level: str
-    choices: List[BaseChoiceSchema] # ใช้ Schema กลาง (Reused)
+    choices: List[BaseChoiceSchema]
+
+# สร้าง/ลงทะเบียนผู้เล่น
+class PlayerCreate(BaseModel):
+    player_id: str
+    username: str
+
+# ดึงข้อมูลผู้เล่น
+class PlayerProfileResponse(BaseModel):
+    player_id: str
+    username: str
+    model_config = ConfigDict(from_attributes=True)
+
+# อัปเดตสถานะเควส
+class QuestUpdate(BaseModel):
+    player_id: str
+    quest_id: str
+    status: str  # "IN_PROGRESS", "COMPLETED"
+
+# Schema สำหรับสร้าง String ไปบอก NPC (ใช้กับ RAG)
+class GameStateForNPC(BaseModel):
+    player_summary: str  
+    # ตัวอย่าง: "Player Alice. Quest 'Find Sword': COMPLETED."
